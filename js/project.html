@@ -1,0 +1,646 @@
+<!doctype html>
+
+<html>
+
+<head>
+
+  <style>
+
+  #game_canvas
+  {
+    position:fixed;
+    width:100vw;
+    height:100vh;
+    top:0vh;
+    left:0vw;
+    background-color:#800f;
+  }
+  #options_div
+  {
+    position:fixed;
+    width:30vw;
+    height:60vh;
+    right:0vw;
+    bottom:0vh;
+    background-color: #7a35;
+    color:white;
+    font-size:20px;
+    overflow-y: auto;
+  }
+  #options_div input
+  {
+    position:relative;
+    width:20vw;
+    height:10vh;
+    left:5vw;
+    background-color: #a375;
+    border:1px solid black;
+    color:white;
+  }
+  #options_div button
+  {
+    position:relative;
+    width:20vw;
+    height:10vh;
+    left:5vw;
+    background-color: #a375;
+    border:1px solid black;
+    color:white;
+  }
+  #fps_counter
+  {
+    position:fixed;
+    width:10vw;
+    height:10vh;
+    top:0vh;
+    left:45vw;
+    background-color: #083f;
+    color:white;
+    font-size:50px;
+    text-align:center;
+  }
+
+</style>
+
+<title>SUPERJEU</title>
+
+</head>
+
+<body>
+
+  <canvas id="game_canvas"></canvas>
+
+  <div id="fps_counter">1000</div>
+
+  <div id="options_div">
+    <button id="play_pause_audio" onclick="lancer_audio()">Music</button>
+    <input id="value_1" type="range" value="1" min="0" max="2" onchange="input_variables[this.id]=this.value;console.log(this.value);">value_1
+    <input id="value_2" type="range" value="20" min="0" max="100" onchange="input_variables[this.id]=this.value;console.log(this.value);">value_2
+    <input id="value_3" type="range" value="80" min="0" max="100" onchange="input_variables[this.id]=this.value;console.log(this.value);">value_3
+    <input id="value_4" type="range" value="70" min="0" max="100" onchange="input_variables[this.id]=this.value;console.log(this.value);">value_4
+    <input id="value_5" type="range" value="70" min="0" max="100" onchange="input_variables[this.id]=this.value;console.log(this.value);">value_5
+    <input id="value_6" type="range" value="70" min="0" max="100" onchange="input_variables[this.id]=this.value;console.log(this.value);">value_6
+    <input id="value_7" type="range" value="70" min="0" max="100" onchange="input_variables[this.id]=this.value;console.log(this.value);">value_7
+    <input id="value_8" type="range" value="70" min="0" max="100" onchange="input_variables[this.id]=this.value;console.log(this.value);">value_8
+  </div>
+
+</body>
+
+<script src="../three/build/three.js"></script>
+<script src="SpaceControls.js"></script>
+<script src="../three/examples/js/utils/SceneUtils.js"></script>
+<script src="ImprovedNoise.js"></script>
+
+<script src="MTLLoader.js"></script>
+<script src="OBJLoader.js"></script>
+
+
+<script type="text/javascript">
+
+////////VARIABLES GLOBALES OBLIGATOIRES////////
+
+//REPRESENTE LE MONDE EN 3D
+var scene = null;
+//MON PERSONNAGE AUQUEL J'AJOUTE LES CONTROLS (PEUT ETRE MA CAMERA SI JE VEUX UN FPS)
+var character = null;
+//CAMERA
+var camera = null;
+//LE RENDERER DE THREEJS
+var renderer = null;
+//LES CONTROLS
+var controls = null;
+//LES LUMIERES DANS MA SCENE
+var lights = [];
+//UN TABLEAU QUI CONTIENDRA DES VARIABLES, QUE VOUS POUVEZ MODIFIER AVEC LES BOUTONS/INPUT EN BAS A DROITE DE L'ECRAN
+var input_variables = [];
+//LE TEMPS ENTRE DEUX AFFICHAGE
+var delta_time = 0;
+//L'HEURE DU DERNIER AFFICHAGE
+var last_time = Date.now();
+//RAYCASTER OUR CALCULER LES INTERSECTIONS
+var raycaster = null;
+//LES FPS
+var fps = 0;
+//UN TRUC QUE J'EXPLIQUE PLUS TARD
+var pointerlockchange;
+var pointerlockerror;
+//LES OBJETS
+var objects = [];
+var player_mun2 = [];
+var base_ground = null
+var player = null;
+var player_shoot = [];
+var loose = false
+var objects_shoot = [];
+var viseur = null
+//ON VA SE SERVIR DE CA POUR GENERER DU BRUIT EN 1D/2D/3D
+var noise_xyz = ImprovedNoise();
+var sound = null
+var vectors_haut_bas_gauche_droite_avant_arriere = [];
+
+//ICI ON LANCE LE CODE
+init();
+animation();
+
+//FONCTION QU'ON LANCE EN PREMIER POUR INITIALISER NOS VARIABLES GLOBALES
+function init(){
+
+  //POUR BLOQUER LA SOURIS QUAND ON CLIQUE SUR L'ECRAN
+  //APPUYER SUR ECHAP POUR SORTIR DU POINTERLOCK
+  pointerlockConfiguration();
+
+  //ON CREE LA SCENE
+  scene = new THREE.Scene();
+
+  //ON CREE UNE CAMERA PERSPECTIVE (JE VOUS LAISSE VOUS RENSEIGNER)
+  camera = new THREE.PerspectiveCamera(90, window.innerWidth / window.innerHeight, 0.01, 10000);
+
+  //On crée notre renderer WebGL
+  renderer = new THREE.WebGLRenderer({
+    canvas: document.getElementById("game_canvas"),
+    sortObjects: true,
+    antialias: true,
+    localClippingEnabled: false,
+    powerPreference: "high-performance",
+    logarithmicDepthBuffer: true,
+    precision: "highp"
+  });
+  renderer.setPixelRatio(1.0);
+  renderer.setSize(window.innerWidth * 1.0, window.innerHeight * 1.0);
+  renderer.setClearColor(new THREE.Color(0xff0088ff), 0.0);
+
+  //ON AJOUTE LA CAMERA A LA SCENE
+  scene.add(camera);
+  //ON RECULE UN PEU LA CAMERA (INITIALEMENT, ELLE EST EN (0,0,0) (COMME TOUS LES OBJECTS D'AILLERUS) )
+  camera.position.set(0, 0, 100);
+
+  //CAMERA.LOOKAT(VECTEUR) FAIT QUE LA CAMERA VISE UN POINT DANS L'ESPACE (ICI, (0,0,0) )
+
+  //J'AJOUTE DE LA LUMIERE SUR LA CAMERA
+  //SI JE VOULAIS, JE POURRAI L'AJOUTER A LA SCENE: ELLE AURAIT UNE POSITION, QU'ON PEUT MODIFIER (light.position.x = 50;)
+  var light = new THREE.PointLight("white",1,5000,2);
+  camera.add(light);
+  lights.push(light);
+
+  //ON AJOUTE UNE LUMIERE AMBIANTE
+  var ambient_light = new THREE.AmbientLight(new THREE.Color(0xffffff), 0.38);
+  scene.add(ambient_light);
+  lights.push(ambient_light);
+
+
+
+  raycaster = new THREE.Raycaster();
+
+  //LES CONTROLES: POUR LE MOMENT JE NE RENTRE PAS DANS LE DETAIL
+
+  var gravity_vector_avant = new THREE.Vector3(0, 0, +1);
+  var gravity_vector_arriere = new THREE.Vector3(0, 0, -1);
+  var gravity_vector_gauche = new THREE.Vector3(-1, 0, 0);
+  var gravity_vector_droite = new THREE.Vector3(+1, 0, 0);
+  var gravity_vector_haut = new THREE.Vector3(0, -1, 0);
+  var gravity_vector_bas = new THREE.Vector3(0, +1, 0);
+  vectors_haut_bas_gauche_droite_avant_arriere.push(gravity_vector_avant);
+  vectors_haut_bas_gauche_droite_avant_arriere.push(gravity_vector_arriere);
+  vectors_haut_bas_gauche_droite_avant_arriere.push(gravity_vector_bas);
+  vectors_haut_bas_gauche_droite_avant_arriere.push(gravity_vector_haut);
+  vectors_haut_bas_gauche_droite_avant_arriere.push(gravity_vector_droite);
+  vectors_haut_bas_gauche_droite_avant_arriere.push(gravity_vector_gauche);
+
+  //ON CREE UNE GEOMETRY
+  //POUR LE TERRAIN, ON PREND PLANEGEOMETRY, MAIS IL EN EXISTE BEAUCOUP D'AUTRES PROPOSEES PAR THREEJS
+  //VOUS POUVEZ MEME CREER VOTRE PROPRE GEOMETRY, EN PARTANT DE my_vertices = [], my_faces = [], ajouter des vertices et faces,
+  //PUIS A LA FIN FAIRE geometry.vertices = my_vertices; geometry.faces = my_faces;var
+  var listener = new THREE.AudioListener();
+  camera.add( listener );
+  sound = new THREE.Audio( listener );
+  console.log("Source: http://chriszabriskie.com/honor/");
+  console.log("Artist: http://chriszabriskie.com/")
+  if(sound != null){
+    var audioLoader = new THREE.AudioLoader();
+    audioLoader.load('/home/quarks/Master/JS_3D/sounds/The_Sun_is_Scheduled_to_Come_Out_Tomorrow.mp3', function( buffer ) {
+	     sound.setBuffer( buffer );
+       sound.setLoop( true );
+       sound.setVolume( 0.1 );
+       sound.play();
+      });
+  }
+
+  viseur_const();
+  var geometry = new THREE.BoxGeometry(3500, 3500, 3500, 10, 10, 10);
+  var material = new THREE.MeshBasicMaterial( {wireframe: true,color: 0x00ff00} );
+  var cube = new THREE.Mesh( geometry, material );
+  scene.add( cube );
+
+  base_ground = ground();
+  scene.add(base_ground);
+
+  create_player();
+  if(player != null){
+    character = player;
+    console.log('a');
+    controls = new SpaceControls( character, vectors_haut_bas_gauche_droite_avant_arriere );
+  }
+
+}
+
+var cpt = 0
+//FONCTION QU'ON VA APPELER EN BOUCLE POUR FAIRE FAIRE BOUGER NOS OBJETS, UPDATE LES CONTROLS ET AFFICHER LA SCENE
+function animation(){
+  if(player != null){
+    var quaternion_save = camera.quaternion.clone();
+    camera.lookAt(player.position);
+    camera.quaternion.slerp(quaternion_save, 0.5);
+    if(camera.position.distanceTo(player.position) > 30){
+      camera.position = camera.position.add(player.position.clone().sub(camera.position).setLength(camera.position.distanceTo(player.position)-30))
+    }
+  }
+
+
+  if(base_ground != null){
+    for( var j=0; j<base_ground.children.length; j++){
+      var child = base_ground.children[j]
+      for(var i =0; i<child.geometry.faces.length; i++){
+        var face = child.geometry.faces[i];
+        var v_a = child.geometry.vertices[face.a];
+        v_a.z = noise_xyz.noise(v_a.x/200, v_a.y/200, Date.now()/2000)*((j+1)*50);
+      }
+    child.material.needsUpdate = true;
+    child.geometry.verticesNeedUpdate = true;
+    child.geometry.elementsNeedUpdate = true;
+    }
+  }
+  if (cpt<400){
+    cpt+=1;
+  }else if(cpt>=400 && objects.length<=100){
+    var a = 1+ (Math.random() * 4);
+    for (var j= 0; j<=a; j++){
+      enemies = create_enemies_type1();
+      enemies.position.set(Math.random() * (1750 - -1750 + 1) + -1750,
+                                           Math.random() * (1750 - -1750 + 1) + -1750,
+                                           Math.random() * (1750 - -1750 + 1) + -1750);
+      enemies.lookAt(player.position);
+      scene.add(enemies);
+      objects.push(enemies);
+    }
+    cpt = 0;
+  }
+
+    objects_shoot.forEach(function(mun){
+      if (mun.ttl <= 0){
+        scene.remove(mun);
+        objects_shoot = objects_shoot.slice(i);
+
+      }else{
+        mun.ttl -=1;
+        mun.position.x += mun.velocity.x;
+        mun.position.y += mun.velocity.y;
+        mun.position.z += mun.velocity.z;
+      }
+    });
+
+    objects_shoot.forEach(function(obj){
+        liste_collision_es = collision(player, obj);
+        if (liste_collision_es.length>0){
+          fps = 0;
+          scene.remove(player);
+          player = null;
+          loose = false;
+          init();
+      }
+    });
+
+    player_shoot.forEach(function(mun){
+      if (mun.ttl < 0){
+        scene.remove(mun);
+      }else{
+        mun.ttl -=1;
+        mun.position.x += mun.velocity.x;
+        mun.position.y += mun.velocity.y;
+        mun.position.z += mun.velocity.z;
+      }
+    });
+    if(player_shoot>2){
+      for(var i=1;i<player_shoot.length-1; i++){
+        if (player_shoot[--i].ttl <0) player_shoot.slice(--i);
+      }
+      if ( player_shoot[player_shoot.length-1].ttl <0) player_shoot.slice(player_shoot.length-1);
+    }
+
+    player_shoot.forEach(function(mun){
+      objects.forEach(function(obj){
+        liste_collision_ps = collision(mun, obj);
+        for(var k=0;k<liste_collision_ps.length;k++){
+          fps += obj.point;
+          scene.remove(obj);
+          obj.touch = true;
+          obj.position.z = -4000;
+        }
+      });
+    });
+    if(objects>2){
+      for(var i=1;i<objects.length-1; i++){
+        if (player_shoot[--i].touch = true) objects.slice(--i);
+      }
+      if ( player_shoot[objects.length-1].touch = true) objects.slice(objects.length-1);
+    }
+
+  for(var i=0; i<objects.length; i++){
+    for(var j=0;j<objects.length; j++){
+      liste_collision = collision(objects[i], objects[j]);
+      if (liste_collision.length>0){
+        for(var k=0;k<liste_collision.length;k++){
+          objects[j].velocity.x +=objects[i].velocity.x+Math.random()*2;
+          objects[j].velocity.y +=objects[i].velocity.y+Math.random()*2;
+          objects[j].velocity.z +=objects[i].velocity.z+Math.random()*2;
+
+          objects[i].velocity.x +=objects[j].velocity.x+Math.random()*2;
+          objects[i].velocity.y +=objects[j].velocity.y+Math.random()*2;
+          objects[i].velocity.z +=objects[j].velocity.z+Math.random()*2;
+
+          objects[j].material.color = new THREE.Color(parseInt(Math.random()*0xffffff));
+          objects[i].material.color = new THREE.Color(parseInt(Math.random()*0xffffff));
+          objects[j].material.needsUpdate = true;
+          objects[i].material.needsUpdate = true;
+        }
+      }
+    }
+  }
+
+  for(var j=0;j<objects.length; j++){
+    liste_collision = collision(player, objects[j]);
+    if (liste_collision.length>0){
+      for(var k=0;k<liste_collision.length;k++){
+        fps = 0;
+        scene.remove(player);
+        player = null;
+        loose = false;
+        init();
+      }
+    }
+  }
+
+  collision_mur_et_rebond();
+  //JE METS LES FPS DANS LA DIV "fps_counter"
+  document.getElementById("fps_counter").innerHTML = fps;
+  //ON A FAIT TOUS LES CALCULS, ON PEUT DESSINER LA SCENE
+  if(player != null){
+    update_character_controls( delta_time );
+  }
+  //ON APPELLE LA FONCTION D'AFFICHAGE
+  render();
+  //ON DEMANDE AU NAVIGATEUR DE RAFRAICHIR LA FENETRE PUIS DE RELANCER "animation()"
+  requestAnimationFrame(animation);
+}
+
+function collision(object_a_tester,object_a_intersecter){
+  raycaster.ray.origin.copy(object_a_tester.position);
+  raycaster.ray.direction.copy(object_a_tester.velocity.clone().normalize());
+  raycaster.near = 0;
+  raycaster.far = object_a_tester.velocity.length() * 2;
+  result = [];
+  object_a_intersecter.raycast(raycaster, result);
+  return result;
+}
+
+
+//FONCTION QUI PERMET DE DESSINER LA SCENE DANS LE CANVAS
+function render(){
+  renderer.render(scene, camera);
+}
+
+//FONCTION APPELEE QUAND ON FAIT UN CLIC GAuCHE
+function clic_gauche(){
+  var geometry = new THREE.CylinderGeometry( 1, 1, 10, 10 );
+  var material = new THREE.MeshBasicMaterial( {color: "green"} );
+  var cylinder = new THREE.Mesh( geometry, material );
+  cylinder.velocity = new THREE.Vector3(0,0,-10*10);
+  cylinder.position.set(player.position.x, player.position.y, player.position.z)
+  cylinder.velocity.applyQuaternion(player.quaternion);
+  cylinder.rotation = player.rotation;
+  cylinder.ttl = 200;
+  player_shoot.push(cylinder);
+  scene.add( cylinder );
+  if(sound != null){
+    var audioLoader = new THREE.AudioLoader();
+    audioLoader.load('/home/quarks/Master/JS_3D/sounds/player_shoot.wav', function( buffer ) {
+	     sound.setBuffer( buffer );
+       sound.setVolume( 0.1 );
+       sound.play();
+      });
+  }
+}
+
+function wipeAll(){
+  for(var i = 0; i< objects.length; i++){
+    scene.remove(objects[i])
+  }
+  objects = []
+}
+
+
+function trouver_object_en_face_camera(){
+  var objects_intersectes = [];
+  //ON PREPARE NOTRE RAYCASTER
+  var vecteur_direction_camera = new THREE.Vector3();
+
+  //ON LUI DONNE UNE ORIGINE (CELLE DE LA CAMERA)
+  raycaster.ray.origin.copy(camera.position);
+
+  //ON LUI DONNE UNE DIRECTION (CELLE DE LA CAMERA)
+  camera.getWorldDirection(vecteur_direction_camera);
+  raycaster.ray.direction.copy(vecteur_direction_camera);
+
+  //NEAR ET FAR REPRESENTE LA PLUS PETITE ET LA PLUS LONGUE DISTANCE DU RAYCASTER
+  raycaster.near = 0;
+  raycaster.far = 100000000;
+
+  //ON PARCOURT TOUS NOS OBJECTS (DANS LE TABLEAU "OBJECTS"), ET ON TESTE POUR CHACUN S'IL EST EST INTERSECTE PAR LE RAYCASTER
+  for (var i = 0; i < objects.length; i++){
+    var object = objects[i];
+    var result_intersection = [];
+    if (object.children.length > 0){
+      for (var j = 0; j < object.children.length; j++){
+        var result_intersection_children = [];
+        object.children[j].raycast(raycaster,result_intersection_children);
+        if (result_intersection_children.length > 0){
+          result_intersection_children.parent = object;
+          objects_intersectes.push(result_intersection_children);
+        }
+      }
+    }
+    else{
+      object.raycast(raycaster,result_intersection);
+    }
+    if (result_intersection.length > 0){
+      objects_intersectes.push(result_intersection);
+    }
+  }
+  return objects_intersectes;
+}
+
+function ground(){
+  var gnd = new THREE.Object3D();
+  var mesh1 = new THREE.MeshBasicMaterial({wireframe: false,color:"#0c53c4"});
+  var mesh2 = new THREE.MeshBasicMaterial({wireframe: true,color:"purple"});
+  var plane = new THREE.PlaneGeometry(3500, 3500, 64, 64);
+  var s1 = new THREE.Mesh(plane, mesh1);
+  var s2 = new THREE.Mesh(plane, mesh2);
+  s2.position.z  +=25;
+  gnd.add(s1);
+  gnd.add(s2);
+  gnd.rotation.x = -Math.PI / 2;
+  gnd.position.y = -1500;
+  return gnd;
+}
+
+function create_player_old(){
+    var plane = new THREE.Object3D();
+    var mesh1 = new THREE.MeshBasicMaterial({wireframe: false,color:"#580438"});
+    var mesh2 = new THREE.MeshBasicMaterial({wireframe: false,color:"#380338"});
+    var mesh3 = new THREE.MeshBasicMaterial({wireframe: false,color:"#4a174a"});
+    var react = new THREE.ConeGeometry( 5, 20, 32 );
+    var corp_geo = new THREE.CylinderGeometry( 5, 5, 50, 32 );
+    var ailes_geo = new THREE.BoxGeometry(5, 10, 32, 4);
+    var corp =  new THREE.Mesh(corp_geo, mesh1);
+    var aile_base =  new THREE.Mesh(ailes_geo, mesh2);
+    var r1 = new THREE.Mesh(react, mesh3);
+    var r2 = new THREE.Mesh(react, mesh3);
+    aile_base.rotation.x =-Math.PI / 2;
+    aile_base.rotation.y =-Math.PI / 2;
+    r1.rotation.z =-Math.PI;
+    r2.rotation.z =-Math.PI;
+    r1.position.x = -10;
+    r2.position.x = 10;
+
+    corp.rotation.x = -Math.PI / 2;
+    r1.rotation.x = -Math.PI / 2;
+    r2.rotation.x = -Math.PI / 2;
+
+    plane.add(corp);
+    plane.add(r2);
+    plane.add(r1);
+    plane.add(aile_base);
+    plane.vitesse = new THREE.Vector3(1, 0, 0);
+    return plane;
+}
+
+// creation de 3-4 enemie toutes les minutes
+function create_enemies_type1(){
+  var mesh1 = new THREE.MeshPhongMaterial({wireframe: false,color:"#808080"});
+  var corps_geo = new THREE.IcosahedronGeometry(50,2);
+  var corp = new THREE.Mesh(corps_geo, mesh1);
+  corp.velocity = new THREE.Vector3(Math.random()*5, Math.random()*5, Math.random()*5)
+  corp.point = 20;
+  corp.touch = false;
+  return corp;
+}
+
+function collision_mur_et_rebond(){
+  for(var i=0; i<objects.length; i++){
+    var enemie = objects[i];
+    if(enemie.position.x>1750 || enemie.position.x<=-1750){
+      enemie.velocity.x = -enemie.velocity.x;
+      enemie.velocity.y = -enemie.velocity.y*-Math.random()-1;
+      enemie.velocity.z = -enemie.velocity.z*-Math.random()-1;
+      if(enemie.position.x>=1750){ enemie.position.x = 1750}
+      if(enemie.position.x<=-1750){enemie.position.x = -1750}
+    }
+    if(enemie.position.y>=1750 || enemie.position.y<=-1550){
+      enemie.velocity.x = -enemie.velocity.x*-Math.random()-1;
+      enemie.velocity.y = -enemie.velocity.y;
+      enemie.velocity.z = -enemie.velocity.z*-Math.random()-1;
+      if(enemie.position.y>=1750){ enemie.position.y = 1750}
+      if(enemie.position.y<=-1550){enemie.position.y = -1550}
+    }
+    if(enemie.position.z<-1750 || enemie.position.z>=1750){
+      enemie.velocity.x = -enemie.velocity.x*-Math.random()-1;
+      enemie.velocity.y = -enemie.velocity.y*-Math.random()-1;
+      enemie.velocity.z = -enemie.velocity.z;
+      if(enemie.position.z>=1750){ enemie.position.z = 1750}
+      if(enemie.position.z<=-1750){ enemie.position.z = -1750}
+    }
+    if(enemie.position.z == enemie.position.y || enemie.position.y == enemie.position.x || enemie.position.x == enemie.position.z ||
+       enemie.position.z == -enemie.position.y || enemie.position.y == -enemie.position.x || enemie.position.x == -enemie.position.z){
+         enemie.velocity.x = -enemie.velocity.x;
+         enemie.velocity.y = -enemie.velocity.y;
+         enemie.velocity.z = -enemie.velocity.z;
+       }
+
+      enemie.position.x += enemie.velocity.x;
+      enemie.position.y += enemie.velocity.z;
+      enemie.position.z += enemie.velocity.y;
+  }
+
+  if(player != null){
+    if(player.position.x>1750){player.position.x =1750;}
+    if(player.position.x<-1750){player.position.x =-1750;}
+    if(player.position.y>1750){player.position.y = 1750;}
+    if(player.position.y<-1550){loose = true;}
+    if(player.position.z>1750){player.position.z =1750;}
+    if(player.position.z<-1750){player.position.z =-1750;}
+  }
+  if (loose == true){
+    var audioLoader = new THREE.AudioLoader();
+    audioLoader.load('/home/quarks/Master/JS_3D/sounds/death.mp3', function( buffer ) {
+	     sound.setBuffer( buffer );
+       sound.setVolume( 0.05 );
+       sound.play();
+      });
+      loose=false;
+      fps = 0;
+      scene.remove(player);
+      player = null;
+      loose = false;
+      init();
+  }
+}
+
+
+function create_player(){
+  var mtlLoaderMedieval = new THREE.MTLLoader();
+  var loader = new THREE.OBJLoader();
+  mtlLoaderMedieval.load("../model/Models/spaceCraft4.mtl", function(materials) {
+  materials.preload();
+  loader.setMaterials(materials);
+  loader.load("../model/Models/spaceCraft4.obj", function(mesh) {
+    mesh.position.set(0, 0, 0);
+    mesh.velocity = new THREE.Vector3(0, 0, 0);
+    player=mesh;
+    character = player;
+    controls = new SpaceControls( character, vectors_haut_bas_gauche_droite_avant_arriere );
+    player.add(viseur);
+    scene.add(player);
+  },
+    function(xhr) {}, function(error) {});
+  });
+}
+
+function viseur_const(){
+  var geometry = new THREE.CylinderGeometry( 0.1, 0.1, 800, 32 );
+  var material = new THREE.MeshBasicMaterial( { color: "red" } );
+  viseur = new THREE.Mesh(geometry, material);
+  viseur.rotation.x = -Math.PI/2;
+  viseur.position.z -= 400;
+  scene.add(viseur)
+}
+
+
+function enemie_shoot(){
+  for(var i=0; i<objects.length; i++){
+    objects[i].lookAt(player);
+    var geometry = new THREE.CylinderGeometry( 1, 1, 10, 10 );
+    var material = new THREE.MeshBasicMaterial( {color: "blue"} );
+    var cylinder = new THREE.Mesh( geometry, material );
+    cylinder.velocity = new THREE.Vector3(0,0,10);
+    cylinder.position.set(objects[i].position.x, objects[i].position.y, objects[i].position.z)
+    cylinder.velocity.applyQuaternion(objects[i].quaternion);
+    cylinder.rotation = objects[i].rotation;
+    cylinder.ttl = 200;
+    objects_shoot.push(cylinder);
+    scene.add( cylinder );
+  }
+}
+
+</script>
+
+</html>
